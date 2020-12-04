@@ -1,93 +1,306 @@
 package com.heavenssword.deathtax;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.RegistryEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.InterModComms;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
-import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.minecraftforge.fml.event.lifecycle.InterModEnqueueEvent;
-import net.minecraftforge.fml.event.lifecycle.InterModProcessEvent;
-import net.minecraftforge.fml.event.server.FMLServerStartingEvent;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+// Java
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.Collection;
+
+// Log4j
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.util.stream.Collectors;
+import net.minecraft.entity.Entity;
+// Minecraft
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.item.ItemEntity;
+import net.minecraft.entity.player.ServerPlayerEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.network.play.server.SCombatPacket;
+import net.minecraft.scoreboard.Score;
+import net.minecraft.scoreboard.ScoreCriteria;
+import net.minecraft.scoreboard.Team;
+import net.minecraft.stats.Stats;
+import net.minecraft.util.DamageSource;
+import net.minecraft.util.Util;
+import net.minecraft.util.text.ChatType;
+import net.minecraft.util.text.ITextComponent;
+import net.minecraft.util.text.StringTextComponent;
+import net.minecraft.util.text.TextFormatting;
+import net.minecraft.util.text.TranslationTextComponent;
+import net.minecraft.util.text.event.HoverEvent;
+import net.minecraft.world.GameRules;
+
+// MinecraftForge
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 
 // The value here should match an entry in the META-INF/mods.toml file
 @Mod( "deathtax" )
 public class DeathTax
 {
+    // Private static fields
     // Directly reference a log4j logger.
     private static final Logger LOGGER = LogManager.getLogger();
+    
+    // Private fields
+    private DeathTaxConfig deathTaxConfig = null;
 
+    // Construction
     public DeathTax()
     {
-        // Register the setup method for modloading
-        FMLJavaModLoadingContext.get().getModEventBus().addListener( this::setup );
-        // Register the enqueueIMC method for modloading
-        FMLJavaModLoadingContext.get().getModEventBus().addListener( this::enqueueIMC );
-        // Register the processIMC method for modloading
-        FMLJavaModLoadingContext.get().getModEventBus().addListener( this::processIMC );
-        // Register the doClientStuff method for modloading
-        FMLJavaModLoadingContext.get().getModEventBus().addListener( this::doClientStuff );
-
+        deathTaxConfig = ConfigLoader.loadConfigFromFile( "" );
+        
         // Register ourselves for server and other game events we are interested in
         MinecraftForge.EVENT_BUS.register( this );
     }
 
-    private void setup( final FMLCommonSetupEvent event )
-    {
-        // some preinit code
-        LOGGER.info( "HELLO FROM PREINIT" );
-        LOGGER.info( "DIRT BLOCK >> {}", Blocks.DIRT.getRegistryName() );
-    }
-
-    private void doClientStuff( final FMLClientSetupEvent event )
-    {
-        // do something that can only be done on the client
-        //LOGGER.info( "Got game settings {}", event.getMinecraftSupplier().get().gameSettings );
-    }
-
-    private void enqueueIMC( final InterModEnqueueEvent event )
-    {
-        // some example code to dispatch IMC to another mod
-        InterModComms.sendTo( "examplemod", "helloworld", () ->
-        {
-            LOGGER.info( "Hello world from the MDK" );
-            return "Hello world";
-        } );
-    }
-
-    private void processIMC( final InterModProcessEvent event )
-    {
-        // some example code to receive and process InterModComms from other mods
-        LOGGER.info( "Got IMC {}", event.getIMCStream().map( m -> m.getMessageSupplier().get() ).collect( Collectors.toList() ) );
-    }
-
-    // You can use SubscribeEvent and let the Event Bus discover methods to call
+    // Public event handlers
     @SubscribeEvent
-    public void onServerStarting( FMLServerStartingEvent event )
+    public void onLivingDeath( final LivingDeathEvent event )
     {
-        // do something when the server starts
-        LOGGER.info( "HELLO from server starting" );
+        if( event.getEntityLiving() instanceof ServerPlayerEntity )
+        {
+            ServerPlayerEntity deadPlayer = (ServerPlayerEntity)event.getEntityLiving();
+            String playerName = deadPlayer.getDisplayName().getString();
+
+            LOGGER.debug( "The player \"" + playerName + "\" has died." );
+
+            LOGGER.debug( "Item's in \"" + playerName + "'s\" main inventory:" );
+            for( ItemStack itemStack : deadPlayer.inventory.mainInventory )
+                LOGGER.debug( "\t" + itemStack.getDisplayName().getString() + " [" + itemStack.getCount() + "]" );
+            
+            if( event.isCancelable() && !event.isCanceled() )
+                event.setCanceled( true );
+            
+            handlePlayerDeathPenalties( deadPlayer, event.getSource() );
+        }
     }
 
-    // You can use EventBusSubscriber to automatically subscribe events on the
-    // contained class (this is subscribing to the MOD
-    // Event bus for receiving Registry Events)
-    @Mod.EventBusSubscriber( bus = Mod.EventBusSubscriber.Bus.MOD )
-    public static class RegistryEvents
+    // Private Methods
+    private void handlePlayerDeathPenalties( ServerPlayerEntity player, DamageSource damageSource )
     {
-        @SubscribeEvent
-        public static void onBlocksRegistry( final RegistryEvent.Register<Block> blockRegistryEvent )
+        boolean shouldShowDeathMessages = player.world.getGameRules().getBoolean( GameRules.SHOW_DEATH_MESSAGES );
+        if( shouldShowDeathMessages )
         {
-            // register a new block here
-            LOGGER.info( "HELLO from Register Block" );
+            ITextComponent deathMessageComponent = player.getCombatTracker().getDeathMessage();
+            player.connection.sendPacket( new SCombatPacket( player.getCombatTracker(), SCombatPacket.Event.ENTITY_DIED, deathMessageComponent ),
+                                         ( p_212356_2_ ) ->
+                                         {
+                                             if( !p_212356_2_.isSuccess() )
+                                             {
+                                                 String s = deathMessageComponent.getStringTruncated( 256 );
+                                                 ITextComponent msgTooLongMessageComponent = new TranslationTextComponent( "death.attack.message_too_long", ( new StringTextComponent( s ) ).mergeStyle( TextFormatting.YELLOW ) );
+                                                 ITextComponent evenMoreMagicMessageComponent = ( new TranslationTextComponent( "death.attack.even_more_magic",
+                                                                                                  player.getDisplayName() ) ).modifyStyle( ( p_212357_1_ ) ->
+                                                                                                  {
+                                                                                                      return p_212357_1_.setHoverEvent( new HoverEvent( HoverEvent.Action.SHOW_TEXT,
+                                                                                                                                                        msgTooLongMessageComponent ) );
+                                                                                                  } );
+                                                 player.connection.sendPacket( new SCombatPacket( player.getCombatTracker(), SCombatPacket.Event.ENTITY_DIED, evenMoreMagicMessageComponent ) );
+                                             }
+                                         } );
+            
+            Team team = player.getTeam();
+            if( team != null && team.getDeathMessageVisibility() != Team.Visible.ALWAYS )
+            {
+                if( team.getDeathMessageVisibility() == Team.Visible.HIDE_FOR_OTHER_TEAMS )
+                    player.server.getPlayerList().sendMessageToAllTeamMembers( player, deathMessageComponent );
+                else if( team.getDeathMessageVisibility() == Team.Visible.HIDE_FOR_OWN_TEAM )
+                    player.server.getPlayerList().sendMessageToTeamOrAllPlayers( player, deathMessageComponent );
+            }
+            else
+                player.server.getPlayerList().func_232641_a_( deathMessageComponent, ChatType.SYSTEM, Util.DUMMY_UUID );
+        }
+        else
+            player.connection.sendPacket( new SCombatPacket( player.getCombatTracker(), SCombatPacket.Event.ENTITY_DIED ) );
+
+        // Handles dropping equipped armor?
+        Method spawnShoulderEntitiesMethod = ReflectionUtilities.getMethod( player.getClass(), "spawnShoulderEntities" );
+        if( spawnShoulderEntitiesMethod != null )
+        {
+            try 
+            { 
+                spawnShoulderEntitiesMethod.setAccessible( true );
+                spawnShoulderEntitiesMethod.invoke( player );
+                spawnShoulderEntitiesMethod.setAccessible( false );
+            }
+            catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
+        }
+        
+        // Should mobs hold a grudge against the player or forgive them when the player dies?
+        if( player.world.getGameRules().getBoolean( GameRules.FORGIVE_DEAD_PLAYERS ) )
+        {
+            Method forgiveDeadPlayerMethod = ReflectionUtilities.getMethod( player.getClass(), "func_241157_eT_" );
+            if( forgiveDeadPlayerMethod != null )
+            {
+                try 
+                {
+                    forgiveDeadPlayerMethod.setAccessible( true );
+                    forgiveDeadPlayerMethod.invoke( player ); 
+                    forgiveDeadPlayerMethod.setAccessible( false );
+                }
+                catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
+            }
+        }
+
+        // This drops inventory and experience as well as spawns applicable loot.
+        if( !player.isSpectator() )
+            spawnDrops( player, damageSource );
+
+        // Award the attacking entity with an increase in kill count and score.
+        player.getWorldScoreboard().forAllObjectives( ScoreCriteria.DEATH_COUNT, player.getScoreboardName(), Score::incrementScore );
+        LivingEntity attackingEntity = player.getAttackingEntity();
+        if( attackingEntity != null )
+        {
+            player.addStat( Stats.ENTITY_KILLED_BY.get( attackingEntity.getType() ) );
+            
+            Field scoreValue = ReflectionUtilities.getField( player.getClass(), "scoreValue" );
+            if( scoreValue != null )
+            {
+                int playerScoreValue;
+                try
+                {
+                    scoreValue.setAccessible( true );
+                    playerScoreValue = scoreValue.getInt( player );
+                    scoreValue.setAccessible( false );
+                    
+                    attackingEntity.awardKillScore( player, playerScoreValue, damageSource );
+                }
+                catch( IllegalArgumentException | IllegalAccessException e ) { e.printStackTrace(); }
+                
+                Method createWitherRoseMethod = ReflectionUtilities.getMethod( player.getClass(), "createWitherRose", LivingEntity.class );
+                if( createWitherRoseMethod != null )
+                {
+                    try 
+                    {
+                        createWitherRoseMethod.setAccessible( true );
+                        createWitherRoseMethod.invoke( player, attackingEntity );
+                        createWitherRoseMethod.setAccessible( false );
+                    }
+                    catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
+                }
+            }
+        }
+        
+        // Update the dying player's stats.
+        player.world.setEntityState( player, (byte)3 );
+        player.addStat( Stats.DEATHS );
+        player.takeStat( Stats.CUSTOM.get( Stats.TIME_SINCE_DEATH ) );
+        player.takeStat( Stats.CUSTOM.get( Stats.TIME_SINCE_REST ) );
+        player.extinguish();
+        
+        // Set burning to false
+        Method setFlagMethod = ReflectionUtilities.getMethod( player.getClass(), "setFlag", int.class, boolean.class );
+        if( setFlagMethod != null )
+        {
+            try 
+            {
+                setFlagMethod.setAccessible( true );
+                setFlagMethod.invoke( player, 0, false );
+                setFlagMethod.setAccessible( false );
+            }
+            catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
+        }
+        
+        player.getCombatTracker().reset();
+    }
+    
+    private void spawnDrops( ServerPlayerEntity player, DamageSource damageSourceIn ) 
+    {
+        Entity entity = damageSourceIn.getTrueSource();
+
+        int lootingLevel = net.minecraftforge.common.ForgeHooks.getLootingLevel( player, entity, damageSourceIn );
+        player.captureDrops( new java.util.ArrayList<>() );
+
+        Field recentlyHitField = ReflectionUtilities.getField( player.getClass(), "recentlyHit" );
+        
+        if( recentlyHitField != null )
+        {
+            try
+            {
+                recentlyHitField.setAccessible( true );
+                int recentlyHit = recentlyHitField.getInt( player );
+                recentlyHitField.setAccessible( false );
+                
+                boolean wasRecentlyHit = recentlyHit > 0;
+                
+                Method isAdultMethod = ReflectionUtilities.getMethod( player.getClass(), "func_230282_cS_" );
+                boolean isAdult = false;
+                if( isAdultMethod != null )
+                {
+                    isAdultMethod.setAccessible( true );
+                    isAdult = (boolean)isAdultMethod.invoke( player );
+                    isAdultMethod.setAccessible( false );
+                
+                    if( isAdult && player.world.getGameRules().getBoolean( GameRules.DO_MOB_LOOT ) ) 
+                    {
+                        Method dropLootMethod = ReflectionUtilities.getMethod( player.getClass(), "dropLoot", DamageSource.class, boolean.class );
+                        if( dropLootMethod != null )
+                        {
+                            dropLootMethod.setAccessible( true );
+                            dropLootMethod.invoke( player, damageSourceIn, wasRecentlyHit );
+                            dropLootMethod.setAccessible( false );
+                        }
+                        
+                        Method dropSpecialItemsMethod = ReflectionUtilities.getMethod( player.getClass(), "dropSpecialItems", DamageSource.class, int.class, boolean.class );
+                        if( dropSpecialItemsMethod != null )
+                        {
+                            dropSpecialItemsMethod.setAccessible( true );
+                            dropSpecialItemsMethod.invoke( player, damageSourceIn, lootingLevel, wasRecentlyHit );
+                            dropSpecialItemsMethod.setAccessible( false );
+                        }
+                    }
+                }
+            }
+            catch( IllegalArgumentException | IllegalAccessException | InvocationTargetException e ) { e.printStackTrace(); }
+        }
+
+        if( deathTaxConfig.getShouldLoseItemsOnDeath() )
+        {
+            Method dropInventoryMethod = ReflectionUtilities.getMethod( player.getClass(), "dropInventory" );
+            if( dropInventoryMethod != null )
+            {
+                try
+                {
+                    dropInventoryMethod.setAccessible( true );
+                    dropInventoryMethod.invoke( player );
+                    dropInventoryMethod.setAccessible( false );
+                }
+                catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
+            }
+        }
+        
+        //if( deathTaxConfig.getShouldLoseItemsOnDeath() )
+        {
+            Method dropExperienceMethod = ReflectionUtilities.getMethod( player.getClass(), "dropExperience" );
+            if( dropExperienceMethod != null )
+            {
+                try
+                {
+                    dropExperienceMethod.setAccessible( true );
+                    dropExperienceMethod.invoke( player );
+                    dropExperienceMethod.setAccessible( false );
+                }
+                catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
+            }
+        }
+
+        if( recentlyHitField != null )
+        {
+            try
+            {
+                recentlyHitField.setAccessible( true );
+                int recentlyHit = recentlyHitField.getInt( player );
+                recentlyHitField.setAccessible( false );
+        
+                Collection<ItemEntity> drops = player.captureDrops( null );
+                if( !net.minecraftforge.common.ForgeHooks.onLivingDrops( player, damageSourceIn, drops, lootingLevel, recentlyHit > 0 ) )
+                   drops.forEach( e -> player.world.addEntity( e ) );
+            }
+            catch( IllegalArgumentException | IllegalAccessException e ) { e.printStackTrace(); }
         }
     }
 }
