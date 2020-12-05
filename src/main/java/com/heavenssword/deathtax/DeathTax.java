@@ -5,13 +5,14 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Collection;
+import java.util.concurrent.ConcurrentHashMap;
 
 // Log4j
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import net.minecraft.entity.Entity;
 // Minecraft
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.item.ItemEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
@@ -23,6 +24,7 @@ import net.minecraft.scoreboard.Team;
 import net.minecraft.stats.Stats;
 import net.minecraft.util.DamageSource;
 import net.minecraft.util.Util;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.text.ChatType;
 import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.StringTextComponent;
@@ -34,6 +36,8 @@ import net.minecraft.world.GameRules;
 // MinecraftForge
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.living.LivingExperienceDropEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
@@ -47,6 +51,8 @@ public class DeathTax
     
     // Private fields
     private DeathTaxConfig deathTaxConfig = null;
+    
+    private ConcurrentHashMap<Integer, PlayerExperienceData> deadPlayerExpDataMap = new ConcurrentHashMap<Integer, PlayerExperienceData>();
 
     // Construction
     public DeathTax()
@@ -78,10 +84,64 @@ public class DeathTax
             handlePlayerDeathPenalties( deadPlayer, event.getSource() );
         }
     }
+    
+    @SubscribeEvent
+    public void onPlayerRespawn( final PlayerEvent.PlayerRespawnEvent event )
+    {
+        if( event.getEntityLiving() instanceof ServerPlayerEntity )
+        {
+            ServerPlayerEntity respawnedPlayer = (ServerPlayerEntity)event.getEntityLiving();
+            
+            //LOGGER.debug( "Respawning player with UUID: " + respawnedPlayer.getUniqueID().toString() );
+            //LOGGER.debug( "UUID hash: " + respawnedPlayer.getUniqueID().hashCode() );
+            PlayerExperienceData playerExpData = null;
+            int respawnedPlayerHash = respawnedPlayer.getUniqueID().hashCode();
+            if( deadPlayerExpDataMap.containsKey( respawnedPlayerHash ) )
+            {
+                playerExpData = deadPlayerExpDataMap.get( respawnedPlayerHash );
+                deadPlayerExpDataMap.remove( respawnedPlayerHash );
+            }
+            
+            LOGGER.debug( "Respawned player exp vals: expLevel = " + respawnedPlayer.experienceLevel + " expTotal = " + respawnedPlayer.experienceTotal + " exp = " + respawnedPlayer.experience );
+                    
+            if( playerExpData != null && !deathTaxConfig.getShouldLoseAllExp() )
+            {
+                LOGGER.debug( "Reclaimed player exp vals: expLevel = " + playerExpData.getExperienceLevel() + " expTotal = " + playerExpData.getExperienceTotal() + " exp = " + playerExpData.getExperience() );
+                respawnedPlayer.giveExperiencePoints( Math.round( playerExpData.getExperienceTotal() * ( 1.0f - deathTaxConfig.getPercentageOfExpToLose() ) ) );                
+                LOGGER.debug( "Respawned player exp vals after gift: expLevel = " + respawnedPlayer.experienceLevel + " expTotal = " + respawnedPlayer.experienceTotal + " exp = " + respawnedPlayer.experience );
+            }
+        }
+    }
+    
+    @SubscribeEvent
+    public void onPlayerDroppedExperience( final LivingExperienceDropEvent event )
+    {
+        if( event.getEntityLiving() instanceof ServerPlayerEntity )
+        {
+            ServerPlayerEntity player = (ServerPlayerEntity)event.getEntityLiving();
+            
+            if( !player.isSpectator() && !player.world.getGameRules().getBoolean(GameRules.KEEP_INVENTORY) )
+            {
+                int playerHash = player.getUniqueID().hashCode();
+                
+                if( deadPlayerExpDataMap.containsKey( playerHash ) )
+                {
+                    PlayerExperienceData playerExpData = deadPlayerExpDataMap.get( playerHash );
+                    int expToDrop = MathHelper.clamp( playerExpData.getExperienceLevel() * 7, 0, 100 );
+                    
+                    event.setDroppedExperience( expToDrop );
+                }
+            }
+        }
+    }
 
     // Private Methods
     private void handlePlayerDeathPenalties( ServerPlayerEntity player, DamageSource damageSource )
     {
+        //LOGGER.debug( "Adding player with UUID: " + player.getUniqueID().toString() );
+        //LOGGER.debug( "UUID hash: " + player.getUniqueID().hashCode() );
+        deadPlayerExpDataMap.put( player.getUniqueID().hashCode(), new PlayerExperienceData( player.experienceLevel, player.experienceTotal, player.experience ) );
+        
         boolean shouldShowDeathMessages = player.world.getGameRules().getBoolean( GameRules.SHOW_DEATH_MESSAGES );
         if( shouldShowDeathMessages )
         {
@@ -271,6 +331,10 @@ public class DeathTax
                 }
                 catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
             }
+        }
+        else
+        {
+            
         }
         
         //if( deathTaxConfig.getShouldLoseItemsOnDeath() )

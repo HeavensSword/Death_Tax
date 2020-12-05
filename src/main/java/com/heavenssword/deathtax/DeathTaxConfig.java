@@ -1,5 +1,7 @@
 package com.heavenssword.deathtax;
 
+import net.minecraft.util.math.MathHelper;
+
 public final class DeathTaxConfig
 {
     // Private Fields
@@ -12,13 +14,18 @@ public final class DeathTaxConfig
     {
         shouldLoseItemsOnDeath = _shouldLoseItemsOnDeath;
         
-        percentageOfExpToLose = _percentageOfExpToLose;
+        percentageOfExpToLose = MathHelper.clamp( _percentageOfExpToLose, 0.0f, 1.0f );
     }
     
     // Public Methods
     public boolean getShouldLoseItemsOnDeath()
     {
         return shouldLoseItemsOnDeath;
+    }
+    
+    public boolean getShouldLoseAllExp()
+    {
+        return ( percentageOfExpToLose >= 1.0f );
     }
     
     public float getPercentageOfExpToLose()
