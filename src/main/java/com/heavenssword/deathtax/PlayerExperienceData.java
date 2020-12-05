@@ -30,9 +30,4 @@ public final class PlayerExperienceData
     {
         return experience;
     }
-    
-    public void modifyExperienceByPercentage( float expMod )
-    {
-        
-    }
 }

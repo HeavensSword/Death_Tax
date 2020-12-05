@@ -5,7 +5,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Collection;
+import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 // Log4j
 import org.apache.logging.log4j.LogManager;
@@ -40,6 +43,7 @@ import net.minecraftforge.event.entity.living.LivingExperienceDropEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.server.FMLServerAboutToStartEvent;
 
 // The value here should match an entry in the META-INF/mods.toml file
 @Mod( "deathtax" )
@@ -52,18 +56,23 @@ public class DeathTax
     // Private fields
     private DeathTaxConfig deathTaxConfig = null;
     
-    private ConcurrentHashMap<Integer, PlayerExperienceData> deadPlayerExpDataMap = new ConcurrentHashMap<Integer, PlayerExperienceData>();
+    private Map<Integer, PlayerExperienceData> deadPlayerExpDataMap = new ConcurrentHashMap<Integer, PlayerExperienceData>();
+    private Map<Integer, Queue<ItemStack>> deadPlayerInventoryMap = new ConcurrentHashMap<Integer, Queue<ItemStack>>();
 
     // Construction
     public DeathTax()
-    {
-        deathTaxConfig = ConfigLoader.loadConfigFromFile( "" );
-        
+    {   
         // Register ourselves for server and other game events we are interested in
         MinecraftForge.EVENT_BUS.register( this );
     }
 
     // Public event handlers
+    @SubscribeEvent
+    public void initialize( final FMLServerAboutToStartEvent event )
+    {        
+        deathTaxConfig = ConfigLoader.loadConfigFromFile( "" );
+    }
+    
     @SubscribeEvent
     public void onLivingDeath( final LivingDeathEvent event )
     {
@@ -88,9 +97,12 @@ public class DeathTax
     @SubscribeEvent
     public void onPlayerRespawn( final PlayerEvent.PlayerRespawnEvent event )
     {
-        if( event.getEntityLiving() instanceof ServerPlayerEntity )
+        if( event.getEntityLiving() instanceof ServerPlayerEntity && deathTaxConfig != null )
         {
             ServerPlayerEntity respawnedPlayer = (ServerPlayerEntity)event.getEntityLiving();
+            
+            if( respawnedPlayer.isSpectator() )
+                return;
             
             //LOGGER.debug( "Respawning player with UUID: " + respawnedPlayer.getUniqueID().toString() );
             //LOGGER.debug( "UUID hash: " + respawnedPlayer.getUniqueID().hashCode() );
@@ -104,11 +116,26 @@ public class DeathTax
             
             LOGGER.debug( "Respawned player exp vals: expLevel = " + respawnedPlayer.experienceLevel + " expTotal = " + respawnedPlayer.experienceTotal + " exp = " + respawnedPlayer.experience );
                     
-            if( playerExpData != null && !deathTaxConfig.getShouldLoseAllExp() )
+            if( playerExpData != null && !deathTaxConfig.shouldLoseAllExp() )
             {
                 LOGGER.debug( "Reclaimed player exp vals: expLevel = " + playerExpData.getExperienceLevel() + " expTotal = " + playerExpData.getExperienceTotal() + " exp = " + playerExpData.getExperience() );
                 respawnedPlayer.giveExperiencePoints( Math.round( playerExpData.getExperienceTotal() * ( 1.0f - deathTaxConfig.getPercentageOfExpToLose() ) ) );                
                 LOGGER.debug( "Respawned player exp vals after gift: expLevel = " + respawnedPlayer.experienceLevel + " expTotal = " + respawnedPlayer.experienceTotal + " exp = " + respawnedPlayer.experience );
+            }
+            
+            if( !deathTaxConfig.getShouldLoseItemsOnDeath() )
+            {
+                if( deadPlayerInventoryMap.containsKey( respawnedPlayerHash ) )
+                {
+                    Queue<ItemStack> inventoryQueue = deadPlayerInventoryMap.get( respawnedPlayerHash );
+                    for( ItemStack itemStack : inventoryQueue )
+                    {
+                        if( !itemStack.isEmpty() )
+                            respawnedPlayer.inventory.addItemStackToInventory( itemStack );
+                    }
+                    
+                    deadPlayerInventoryMap.remove( respawnedPlayerHash );
+                }
             }
         }
     }
@@ -116,11 +143,11 @@ public class DeathTax
     @SubscribeEvent
     public void onPlayerDroppedExperience( final LivingExperienceDropEvent event )
     {
-        if( event.getEntityLiving() instanceof ServerPlayerEntity )
+        if( event.getEntityLiving() instanceof ServerPlayerEntity && deathTaxConfig != null )
         {
             ServerPlayerEntity player = (ServerPlayerEntity)event.getEntityLiving();
             
-            if( !player.isSpectator() && !player.world.getGameRules().getBoolean(GameRules.KEEP_INVENTORY) )
+            if( !player.isSpectator() && !player.world.getGameRules().getBoolean( GameRules.KEEP_INVENTORY ) && deathTaxConfig.getPercentageOfExpToLose() > 0.0f )
             {
                 int playerHash = player.getUniqueID().hashCode();
                 
@@ -129,18 +156,27 @@ public class DeathTax
                     PlayerExperienceData playerExpData = deadPlayerExpDataMap.get( playerHash );
                     int expToDrop = MathHelper.clamp( playerExpData.getExperienceLevel() * 7, 0, 100 );
                     
-                    event.setDroppedExperience( expToDrop );
+                    // Make sure that the player actually lost more xp than they should drop.
+                    int expLost = Math.round( playerExpData.getExperienceTotal() * ( 1.0f - deathTaxConfig.getPercentageOfExpToLose() ) );
+                    
+                    event.setDroppedExperience( ( expToDrop < expLost ? expToDrop : Math.round( expLost * 0.75f ) ) );
                 }
             }
         }
     }
 
-    // Private Methods
+    // Private Methods    
     private void handlePlayerDeathPenalties( ServerPlayerEntity player, DamageSource damageSource )
     {
+        int playerHash = player.getUniqueID().hashCode();
+        
         //LOGGER.debug( "Adding player with UUID: " + player.getUniqueID().toString() );
         //LOGGER.debug( "UUID hash: " + player.getUniqueID().hashCode() );
-        deadPlayerExpDataMap.put( player.getUniqueID().hashCode(), new PlayerExperienceData( player.experienceLevel, player.experienceTotal, player.experience ) );
+        // Copy dead player's experience data.
+        deadPlayerExpDataMap.put( playerHash, new PlayerExperienceData( player.experienceLevel, player.experienceTotal, player.experience ) );
+        
+        // Copy dead player's inventory.
+        deadPlayerInventoryMap.put( playerHash, new ConcurrentLinkedQueue<ItemStack>( player.inventory.mainInventory ) );
         
         boolean shouldShowDeathMessages = player.world.getGameRules().getBoolean( GameRules.SHOW_DEATH_MESSAGES );
         if( shouldShowDeathMessages )
@@ -332,24 +368,17 @@ public class DeathTax
                 catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
             }
         }
-        else
+
+        Method dropExperienceMethod = ReflectionUtilities.getMethod( player.getClass(), "dropExperience" );
+        if( dropExperienceMethod != null )
         {
-            
-        }
-        
-        //if( deathTaxConfig.getShouldLoseItemsOnDeath() )
-        {
-            Method dropExperienceMethod = ReflectionUtilities.getMethod( player.getClass(), "dropExperience" );
-            if( dropExperienceMethod != null )
+            try
             {
-                try
-                {
-                    dropExperienceMethod.setAccessible( true );
-                    dropExperienceMethod.invoke( player );
-                    dropExperienceMethod.setAccessible( false );
-                }
-                catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
+                dropExperienceMethod.setAccessible( true );
+                dropExperienceMethod.invoke( player );
+                dropExperienceMethod.setAccessible( false );
             }
+            catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
         }
 
         if( recentlyHitField != null )
