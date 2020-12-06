@@ -1,6 +1,7 @@
 package com.heavenssword.deathtax;
 
 // Java
+import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -16,6 +17,7 @@ import org.apache.logging.log4j.Logger;
 import com.mojang.datafixers.util.Pair;
 
 // Minecraft
+import net.minecraft.client.Minecraft;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.item.ItemEntity;
@@ -70,13 +72,24 @@ public class DeathTax
     // Public event handlers
     @SubscribeEvent
     public void initialize( final FMLServerAboutToStartEvent event )
-    {        
-        deathTaxConfig = ConfigLoader.loadConfigFromFile( "" );
+    {
+        Minecraft mc = Minecraft.getInstance();
+        
+        File deathTaxDir = new File( mc.gameDir, "Death_Tax" );
+        if( !deathTaxDir.exists() )
+            deathTaxDir.mkdir();
+        
+        deathTaxConfig = ConfigLoader.loadConfigFromFile( deathTaxDir );
+        
+        LOGGER.debug( deathTaxConfig.toString() );
     }
     
     @SubscribeEvent
     public void onLivingDeath( final LivingDeathEvent event )
     {
+        if( !deathTaxConfig.getIsEnabled() )
+            return;
+        
         if( event.getEntityLiving() instanceof ServerPlayerEntity )
         {
             ServerPlayerEntity deadPlayer = (ServerPlayerEntity)event.getEntityLiving();
@@ -98,6 +111,9 @@ public class DeathTax
     @SubscribeEvent
     public void onPlayerRespawn( final PlayerEvent.PlayerRespawnEvent event )
     {
+        if( !deathTaxConfig.getIsEnabled() )
+            return;
+        
         if( event.getEntityLiving() instanceof ServerPlayerEntity && deathTaxConfig != null )
         {
             ServerPlayerEntity respawnedPlayer = (ServerPlayerEntity)event.getEntityLiving();
@@ -143,6 +159,9 @@ public class DeathTax
     @SubscribeEvent
     public void onPlayerDroppedExperience( final LivingExperienceDropEvent event )
     {
+        if( !deathTaxConfig.getIsEnabled() )
+            return;
+        
         if( event.getEntityLiving() instanceof ServerPlayerEntity && deathTaxConfig != null )
         {
             ServerPlayerEntity player = (ServerPlayerEntity)event.getEntityLiving();

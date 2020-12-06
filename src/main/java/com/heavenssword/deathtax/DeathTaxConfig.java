@@ -9,8 +9,10 @@ import java.util.Collection;
 import net.minecraft.util.math.MathHelper;
 
 public final class DeathTaxConfig
-{
+{    
     // Private Fields
+    private final boolean isEnabled;
+    
     private final boolean shouldLoseItemsOnDeath;
     
     private final float percentageOfExpToLose;
@@ -20,8 +22,10 @@ public final class DeathTaxConfig
     private final EquipmentTier equipmentTierThreshold;
     
     // Construction
-    public DeathTaxConfig( boolean _shouldLoseItemsOnDeath, float _percentageOfExpToLose, float _percentageOfItemStackToLose, Collection<String> _itemDropWhiteList, EquipmentTier _equipmentTierThreshold )
+    public DeathTaxConfig( boolean _isEnabled, boolean _shouldLoseItemsOnDeath, float _percentageOfExpToLose, float _percentageOfItemStackToLose, Collection<String> _itemDropWhiteList, EquipmentTier _equipmentTierThreshold )
     {
+        isEnabled = _isEnabled;
+        
         shouldLoseItemsOnDeath = _shouldLoseItemsOnDeath;
         
         percentageOfExpToLose = MathHelper.clamp( _percentageOfExpToLose, 0.0f, 1.0f );
@@ -32,6 +36,11 @@ public final class DeathTaxConfig
     }
     
     // Public Methods
+    public Boolean getIsEnabled()
+    {
+        return isEnabled;
+    }
+    
     public boolean getShouldLoseItemsOnDeath()
     {
         return shouldLoseItemsOnDeath;
@@ -59,11 +68,23 @@ public final class DeathTaxConfig
     
     public boolean hasItemInWhiteList( String itemName )
     {
-        return itemDropWhitelist.contains( itemName );
+        return itemDropWhitelist.contains( itemName.toLowerCase() );
     }
     
     public EquipmentTier getEquipmentTierThreshold()
     {
         return equipmentTierThreshold;
+    }
+    
+    @Override
+    public String toString()
+    {
+        return  ".: Death Tax Config :.\n" +
+                "isEnabled = " + ( isEnabled ? "TRUE" : "FALSE" ) + "\n" +
+                "shouldLoseItemsOnDeath = " + ( shouldLoseItemsOnDeath ? "TRUE" : "FALSE" ) + "\n" +
+                "percentageOfExpToLose = " + percentageOfExpToLose + "\n" +
+                "percentageOfItemStackToLose = " + percentageOfItemStackToLose + "\n" +
+                "itemDropWhitelist = " + itemDropWhitelist.toString() + "\n" +
+                "equipmentTierThreshold = " + equipmentTierThreshold.toString();
     }
 }

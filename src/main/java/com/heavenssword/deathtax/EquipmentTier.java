@@ -38,4 +38,20 @@ public enum EquipmentTier
         
         return 0;
     }
+    
+    public static boolean hasValue( String value )
+    {
+        EquipmentTier foundValue = null;
+        
+        try
+        {
+            foundValue = valueOf( value );
+        }
+        catch( IllegalArgumentException e )
+        {
+            return false;
+        }
+        
+        return ( foundValue != null );
+    }
 }

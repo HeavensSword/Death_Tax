@@ -1,0 +1,34 @@
+# Death Tax Config
+
+enabled=true
+
+# === Percentage of Exp to Lose
+# This should be a value between 0.0 and 1.0. (e.g. 0.5 = 50%)
+# How much exp will be lost on death?
+
+exp.percentageOfExpToLose=0.25
+
+# === Should Lost Items On Death
+# Values : [true/false]
+# Simply specifies if items should be lost upon death.
+
+inventory.shouldLoseItemsOnDeath=true
+
+# === Percentage of Item Stack to Lose
+# This should be a value between 0.0 and 1.0. (e.g. 0.5 = 50%)
+# If any item is stackable, what percentage of your current stack will be lost on death?
+
+inventory.percentageOfItemStackToLose=0.2
+
+# === Item Drop Whitelist
+# Values : Comma separated item names (REPLACE SPACES WITH UNDERSCORE e.g. "Diamond Sword" should be "diamond_sword")
+# This is a list of items that you don't want to drop. 
+
+inventory.itemDropWhitelist=apples,diamond_sword
+
+# === Equipment Tier Threshold
+# Values : [NONE, WOODEN, STONE, LEATHER, CHAINMAIL, IRON, GOLDEN, DIAMOND, or NETHERITE]
+# You can specify the minimum SAFE material tier. That tier and above will be safe from being dropped, anything below the chosen tier can be dropped.
+# e.g. If you choose "IRON", any equipment made from iron, gold, diamond, or netherite would be safe.  
+
+inventory.equipmentTierThreshold=CHAINMAIL
