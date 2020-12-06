@@ -6,13 +6,14 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Map;
-import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 // Log4j
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+// Mojang
+import com.mojang.datafixers.util.Pair;
 
 // Minecraft
 import net.minecraft.entity.Entity;
@@ -57,7 +58,7 @@ public class DeathTax
     private DeathTaxConfig deathTaxConfig = null;
     
     private Map<Integer, PlayerExperienceData> deadPlayerExpDataMap = new ConcurrentHashMap<Integer, PlayerExperienceData>();
-    private Map<Integer, Queue<ItemStack>> deadPlayerInventoryMap = new ConcurrentHashMap<Integer, Queue<ItemStack>>();
+    private Map<Integer, PlayerInventoryData> deadPlayerInventoryMap = new ConcurrentHashMap<Integer, PlayerInventoryData>();
 
     // Construction
     public DeathTax()
@@ -123,19 +124,18 @@ public class DeathTax
                 LOGGER.debug( "Respawned player exp vals after gift: expLevel = " + respawnedPlayer.experienceLevel + " expTotal = " + respawnedPlayer.experienceTotal + " exp = " + respawnedPlayer.experience );
             }
             
-            if( !deathTaxConfig.getShouldLoseItemsOnDeath() )
+            if( deadPlayerInventoryMap.containsKey( respawnedPlayerHash ) )
             {
-                if( deadPlayerInventoryMap.containsKey( respawnedPlayerHash ) )
+                PlayerInventoryData inventoryData = deadPlayerInventoryMap.get( respawnedPlayerHash );
+                for( Pair<Integer, ItemStack> itemStackPair : inventoryData.getInventory() )
                 {
-                    Queue<ItemStack> inventoryQueue = deadPlayerInventoryMap.get( respawnedPlayerHash );
-                    for( ItemStack itemStack : inventoryQueue )
-                    {
-                        if( !itemStack.isEmpty() )
-                            respawnedPlayer.inventory.addItemStackToInventory( itemStack );
-                    }
-                    
-                    deadPlayerInventoryMap.remove( respawnedPlayerHash );
+                    ItemStack itemStack = itemStackPair.getSecond();
+                    LOGGER.debug( "Adding item to Inventory: " + itemStack.getDisplayName().getString() );
+                    if( !itemStack.isEmpty() )
+                        respawnedPlayer.inventory.add( itemStackPair.getFirst(), itemStack );
                 }
+                
+                deadPlayerInventoryMap.remove( respawnedPlayerHash );
             }
         }
     }
@@ -176,7 +176,7 @@ public class DeathTax
         deadPlayerExpDataMap.put( playerHash, new PlayerExperienceData( player.experienceLevel, player.experienceTotal, player.experience ) );
         
         // Copy dead player's inventory.
-        deadPlayerInventoryMap.put( playerHash, new ConcurrentLinkedQueue<ItemStack>( player.inventory.mainInventory ) );
+        deadPlayerInventoryMap.put( playerHash, new PlayerInventoryData( player.inventory ) );
         
         boolean shouldShowDeathMessages = player.world.getGameRules().getBoolean( GameRules.SHOW_DEATH_MESSAGES );
         if( shouldShowDeathMessages )
@@ -355,19 +355,7 @@ public class DeathTax
         }
 
         if( deathTaxConfig.getShouldLoseItemsOnDeath() )
-        {
-            Method dropInventoryMethod = ReflectionUtilities.getMethod( player.getClass(), "dropInventory" );
-            if( dropInventoryMethod != null )
-            {
-                try
-                {
-                    dropInventoryMethod.setAccessible( true );
-                    dropInventoryMethod.invoke( player );
-                    dropInventoryMethod.setAccessible( false );
-                }
-                catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
-            }
-        }
+            dropInventory( player );
 
         Method dropExperienceMethod = ReflectionUtilities.getMethod( player.getClass(), "dropExperience" );
         if( dropExperienceMethod != null )
@@ -394,6 +382,30 @@ public class DeathTax
                    drops.forEach( e -> player.world.addEntity( e ) );
             }
             catch( IllegalArgumentException | IllegalAccessException e ) { e.printStackTrace(); }
+        }
+    }
+    
+    private void dropInventory( ServerPlayerEntity player ) 
+    {
+        if( !player.world.getGameRules().getBoolean( GameRules.KEEP_INVENTORY ) ) 
+        {
+            Method destroyVanishingCursedItemsMethod = ReflectionUtilities.getMethod( player.getClass(), "destroyVanishingCursedItems" );
+            if( destroyVanishingCursedItemsMethod != null )
+            {
+                try
+                {
+                    destroyVanishingCursedItemsMethod.setAccessible( true );
+                    destroyVanishingCursedItemsMethod.invoke( player );
+                    destroyVanishingCursedItemsMethod.setAccessible( false );
+                }
+                catch( IllegalAccessException | IllegalArgumentException | InvocationTargetException e ) { e.printStackTrace(); }
+            }
+            
+            int playerHash = player.getUniqueID().hashCode();
+            
+            deadPlayerInventoryMap.remove( playerHash );
+            deadPlayerInventoryMap.put( playerHash, InventoryTaxman.taxInventory( deathTaxConfig, player.inventory ) );
+            player.inventory.dropAllItems();
         }
     }
 }

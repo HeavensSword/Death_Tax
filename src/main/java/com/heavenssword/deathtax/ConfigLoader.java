@@ -9,6 +9,6 @@ public final class ConfigLoader
     // Public Methods
     public static DeathTaxConfig loadConfigFromFile( String configPath )
     {
-        return new DeathTaxConfig( false, 0.5f, 0.2f, new ArrayList<String>( Arrays.asList( "Diamond Sword", "Apple" ) ), EquipmentTier.STONE );
+        return new DeathTaxConfig( true, 0.5f, 0.2f, new ArrayList<String>( Arrays.asList( "Diamond Sword", "Apple" ) ), EquipmentTier.CHAINMAIL );
     }
 }

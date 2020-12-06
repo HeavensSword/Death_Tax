@@ -4,10 +4,13 @@ package com.heavenssword.deathtax;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
+
+// Mojang
+import com.mojang.datafixers.util.Pair;
 
 // Minecraft
 import net.minecraft.item.ItemStack;
+import net.minecraft.entity.player.PlayerInventory;
 
 public final class InventoryTaxman
 {
@@ -91,43 +94,16 @@ public final class InventoryTaxman
                                                                                  } };
 
     // Public Methods
-    public static Queue<ItemStack> taxInventory( DeathTaxConfig deathTaxConfig, Queue<ItemStack> playerInventory )
-    {
+    public static PlayerInventoryData taxInventory( DeathTaxConfig deathTaxConfig, PlayerInventory playerInventory )
+    {        
         if( deathTaxConfig == null || !deathTaxConfig.getShouldLoseItemsOnDeath() )
-            return playerInventory;
+            return new PlayerInventoryData( playerInventory );
         
-        Queue<ItemStack> taxedInventory = new ConcurrentLinkedQueue<ItemStack>();
+        PlayerInventoryData taxedInventoryData = new PlayerInventoryData();
         
-        for( ItemStack itemStack : playerInventory )
-        {
-            // Keep whitelisted items.
-            if( deathTaxConfig.hasItemInWhiteList( itemStack.getDisplayName().getString() ) )
-                taxedInventory.add( itemStack );
-            
-            // Keep items that are equal to above the chosen EquipmentTier Threshold.
-            if( deathTaxConfig.getEquipmentTierThreshold().compareWith( getEquipmentTierForItem( itemStack ) ) <= 0 )
-                taxedInventory.add( itemStack );
-            
-            // Remove items from stacks based on selected loss percentage.
-            if( itemStack.isStackable() )
-            {
-                int stackCount = itemStack.getCount();
-                int amountToLose = Math.round( stackCount * deathTaxConfig.getPercentageOfItemStackToLose() );
-                
-                ItemStack reducedStack = itemStack.copy();
-                reducedStack.setCount( stackCount - amountToLose );
-                
-                itemStack.setCount( amountToLose );
-                
-                taxedInventory.add( reducedStack );
-            }
-        }
+        taxInventoryHelper( deathTaxConfig, playerInventory, taxedInventoryData.getInventory() );
         
-        // What remains in the incoming inventory is what will be discarded.
-        for( ItemStack itemStack : taxedInventory )
-            playerInventory.remove( itemStack );
-        
-        return taxedInventory;
+        return taxedInventoryData;
     }
     
     public static EquipmentTier getEquipmentTierForItem( ItemStack itemStack )
@@ -138,5 +114,45 @@ public final class InventoryTaxman
             return equipmentTierItemLookupMap.get( itemName );
         
         return EquipmentTier.NONE;
+    }
+    
+    // Private Methods
+    private static void taxInventoryHelper( DeathTaxConfig deathTaxConfig, PlayerInventory playerInventory, Queue<Pair<Integer, ItemStack>> currentTaxedInventory )
+    {
+        for( int i = 0; i < playerInventory.getSizeInventory(); ++i )
+        {
+            ItemStack itemStack = playerInventory.getStackInSlot( i );
+            if( itemStack.isEmpty() )
+                continue;
+            
+            // What remains in the incoming "currentInventory" is what will be discarded into the world as loot.
+            
+            // Keep whitelisted items.
+            if( deathTaxConfig.hasItemInWhiteList( itemStack.getDisplayName().getString() ) )
+            {
+                currentTaxedInventory.add( Pair.of( i, itemStack ) );
+                playerInventory.removeStackFromSlot( i );
+            }
+            // Keep items that are equal to above the chosen EquipmentTier Threshold.
+            else if( deathTaxConfig.getEquipmentTierThreshold().compareWith( getEquipmentTierForItem( itemStack ) ) <= 0 )
+            {
+                currentTaxedInventory.add( Pair.of( i, itemStack ) );
+                playerInventory.removeStackFromSlot( i );
+            }            
+            // Remove items from stacks based on selected loss percentage.
+            else if( itemStack.isStackable() )
+            {
+                int stackCount = itemStack.getCount();
+                int amountToLose = Math.round( stackCount * deathTaxConfig.getPercentageOfItemStackToLose() );
+                
+                ItemStack reducedStack = itemStack.copy();
+                reducedStack.setCount( stackCount - amountToLose );
+                
+                itemStack.setCount( amountToLose );
+                
+                currentTaxedInventory.add( Pair.of( i, reducedStack ) );
+                playerInventory.setInventorySlotContents( i, itemStack );
+            }
+        }
     }
 }
