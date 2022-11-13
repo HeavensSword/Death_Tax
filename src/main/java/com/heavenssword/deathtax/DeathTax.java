@@ -41,6 +41,8 @@ import net.minecraft.world.GameRules;
 
 // MinecraftForge
 import net.minecraftforge.common.MinecraftForge;
+//import net.minecraftforge.event.TickEvent;
+//import net.minecraftforge.fml.LogicalSide;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingExperienceDropEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
@@ -83,6 +85,26 @@ public class DeathTax
         
         LOGGER.debug( deathTaxConfig.toString() );
     }
+    
+    /*static boolean derp = true;
+    @SubscribeEvent
+    public void onPlayerTick( final TickEvent.PlayerTickEvent event )
+    {
+        if( event == null || !event.side.equals( LogicalSide.SERVER ) || event.player.isSpectator() || !( event.player instanceof ServerPlayerEntity ))
+            return;
+        
+        ServerPlayerEntity player = (ServerPlayerEntity)event.player;
+        
+        if( derp )
+        {
+            ItemStack villagerEgg = new ItemStack( Items.VILLAGER_SPAWN_EGG );
+            villagerEgg.setCount( 3 );
+            
+            player.inventory.addItemStackToInventory( villagerEgg  );
+            
+            derp = false;
+        }
+    }*/
     
     @SubscribeEvent
     public void onLivingDeath( final LivingDeathEvent event )
@@ -146,9 +168,10 @@ public class DeathTax
                 for( Pair<Integer, ItemStack> itemStackPair : inventoryData.getInventory() )
                 {
                     ItemStack itemStack = itemStackPair.getSecond();
-                    LOGGER.debug( "Adding item to Inventory: " + itemStack.getDisplayName().getString() );
+                    LOGGER.debug( "Adding item to Inventory: " + itemStack.getDisplayName().getString() + " to slot [" + itemStackPair.getFirst() + "]" );
                     if( !itemStack.isEmpty() )
-                        respawnedPlayer.inventory.add( itemStackPair.getFirst(), itemStack );
+                        respawnedPlayer.inventory.setInventorySlotContents( itemStackPair.getFirst(), itemStack );
+                        //respawnedPlayer.inventory.add( itemStackPair.getFirst(), itemStack );
                 }
                 
                 deadPlayerInventoryMap.remove( respawnedPlayerHash );
@@ -159,10 +182,10 @@ public class DeathTax
     @SubscribeEvent
     public void onPlayerDroppedExperience( final LivingExperienceDropEvent event )
     {
-        if( !deathTaxConfig.getIsEnabled() )
+        if( deathTaxConfig == null || !deathTaxConfig.getIsEnabled() )
             return;
         
-        if( event.getEntityLiving() instanceof ServerPlayerEntity && deathTaxConfig != null )
+        if( event.getEntityLiving() instanceof ServerPlayerEntity )
         {
             ServerPlayerEntity player = (ServerPlayerEntity)event.getEntityLiving();
             

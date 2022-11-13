@@ -28,30 +28,28 @@ public final class InventoryTaxman
                                                                                      put( "Iron Hoe", EquipmentTier.IRON );
                                                                                      put( "Golden Hoe", EquipmentTier.GOLDEN );
                                                                                      put( "Diamond Hoe", EquipmentTier.DIAMOND );
+                                                                                     put( "Netherite Hoe", EquipmentTier.NETHERITE );
 
                                                                                      put( "Wooden Axe", EquipmentTier.WOODEN );
                                                                                      put( "Stone Axe", EquipmentTier.STONE );
                                                                                      put( "Iron Axe", EquipmentTier.IRON );
                                                                                      put( "Golden Axe", EquipmentTier.GOLDEN );
                                                                                      put( "Diamond Axe", EquipmentTier.DIAMOND );
+                                                                                     put( "Netherite Axe", EquipmentTier.NETHERITE );
 
                                                                                      put( "Wooden Pickaxe", EquipmentTier.WOODEN );
                                                                                      put( "Stone Pickaxe", EquipmentTier.STONE );
                                                                                      put( "Iron Pickaxe", EquipmentTier.IRON );
                                                                                      put( "Golden Pickaxe", EquipmentTier.GOLDEN );
                                                                                      put( "Diamond Pickaxe", EquipmentTier.DIAMOND );
+                                                                                     put( "Netherite Pickaxe", EquipmentTier.NETHERITE );
 
                                                                                      put( "Wooden Shovel", EquipmentTier.WOODEN );
                                                                                      put( "Stone Shovel", EquipmentTier.STONE );
                                                                                      put( "Iron Shovel", EquipmentTier.IRON );
                                                                                      put( "Golden Shovel", EquipmentTier.GOLDEN );
                                                                                      put( "Diamond Shovel", EquipmentTier.DIAMOND );
-
-                                                                                     put( "Wooden Shovel", EquipmentTier.WOODEN );
-                                                                                     put( "Stone Shovel", EquipmentTier.STONE );
-                                                                                     put( "Iron Shovel", EquipmentTier.IRON );
-                                                                                     put( "Golden Shovel", EquipmentTier.GOLDEN );
-                                                                                     put( "Diamond Shovel", EquipmentTier.DIAMOND );
+                                                                                     put( "Netherite Shovel", EquipmentTier.NETHERITE );
 
                                                                                      put( "Shield", EquipmentTier.IRON );
 
